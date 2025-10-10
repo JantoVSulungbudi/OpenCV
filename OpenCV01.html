@@ -13,6 +13,7 @@
 <body>
   <h2>Face and Eye Detection (OpenCV.js)</h2>
   <button id="startBtn">Start Camera</button>
+  <button id="switchBtn">Switch Camera</button>
   <button id="captureBtn">Capture</button>
   <video id="video" autoplay playsinline></video>
   <canvas id="canvasOutput"></canvas>
@@ -24,12 +25,15 @@
     let canvas = document.getElementById('canvasOutput');
     let ctx = canvas.getContext('2d');
     let faceCascade, eyeCascade;
+    
+    let currentFacingMode = "environment"; // start with back camera
+    let stream = null;
 
     function onOpenCvReady() {
       console.log("OpenCV.js loaded");
       document.getElementById('startBtn').disabled = false;
     }
-
+/*
     async function startCamera(facingMode = "environment") {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -44,10 +48,37 @@
         else alert("Cannot access camera: " + err.message);
       }
     }
+*/
+    async function startCamera(facingMode = "environment") {
+      try {
+        // Stop any existing stream before switching
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+
+        // Request new stream
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facingMode },
+          audio: false
+        });
+        video.srcObject = stream;
+        currentFacingMode = facingMode;
+        console.log("Camera started:", facingMode);
+      } catch (err) {
+        console.error("Camera error:", err);
+        alert("Cannot access camera: " + err.message);
+      }
+    }
 
     document.getElementById('startBtn').onclick = async () => {
       await loadCascades();
       startCamera();
+    };
+    
+    // Button event to switch between front/back
+    document.getElementById('switchBtn').onclick = () => {
+      const newMode = currentFacingMode === "environment" ? "user" : "environment";
+      startCamera(newMode);
     };
 
     async function loadCascades() {
@@ -144,4 +175,5 @@
   </script>
 </body>
 </html>
+
 
