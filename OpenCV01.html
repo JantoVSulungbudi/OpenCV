@@ -196,8 +196,10 @@
         let faceROI = gray.roi(upperHalfRect);
 
         let eyes = new cv.RectVector();
-        eyeCascade.detectMultiScale(faceROI, eyes, 1.1, 5, 0, new cv.Size(20, 20));
-
+        eyeCascade.detectMultiScale(faceROI, eyes, 1.1, 5, 0, new cv.Size(20, 20)); 
+        // Misses some real eyes than use below
+        // eyeCascade.detectMultiScale(faceROI, eyes, 1.1, 4, 0, new cv.Size(15, 15));
+        
         // Convert detected eyes to JS array for easier filtering
         let eyeRects = [];
         for (let j = 0; j < eyes.size(); ++j) {
@@ -218,7 +220,7 @@
           // Keep only two eyes that are roughly on same row
           let avgY = eyeRects.reduce((s, e) => s + e.y, 0) / eyeRects.length;
           eyeRects = eyeRects
-            .filter(e => Math.abs(e.y - avgY) < f.height / 6) // same height band
+            .filter(e => Math.abs(e.y - avgY) < f.height / 6) // same height band, change 6 to 5 if misses real eyes
             .slice(0, 2); // at most 2
         } else {
           eyeRects = eyeRects.slice(0, 2);
@@ -240,6 +242,7 @@
   </script>
 </body>
 </html>
+
 
 
 
