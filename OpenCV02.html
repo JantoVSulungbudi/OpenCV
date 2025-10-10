@@ -148,7 +148,7 @@
             let x = circles.data32F[k * 3];
             let y = circles.data32F[k * 3 + 1];
             let center = new cv.Point(ex + x, ey + y);
-            cv.circle(src, center, 2, [0, 0, 255, 255], 3); // red dot
+            cv.circle(src, center, 5, [255, 0, 0, 255], 3); // red dot
           }
 
           eyeROI.delete();
@@ -166,3 +166,4 @@
   </script>
 </body>
 </html>
+
