@@ -135,7 +135,7 @@
       cv.imshow(canvas, src);
       src.delete(); gray.delete(); faces.delete(); eyes.delete();
     }
-*/
+
     function detectFacesAndEyes() {
       let src = cv.imread(canvas);
       let gray = new cv.Mat();
@@ -173,10 +173,74 @@
       cv.imshow(canvas, src);
       src.delete(); gray.delete(); faces.delete(); eyes.delete();
     }
+*/
+    
+    function detectFacesAndEyes() {
+      let src = cv.imread(canvas);
+      let gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
+      let faces = new cv.RectVector();
+      faceCascade.detectMultiScale(gray, faces, 1.1, 3, 0);
+
+      for (let i = 0; i < faces.size(); ++i) {
+        let f = faces.get(i);
+
+        // Draw face bounding box
+        cv.rectangle(src,
+          new cv.Point(f.x, f.y),
+          new cv.Point(f.x + f.width, f.y + f.height), [255, 0, 0, 255], 2);
+
+        // --- Restrict detection area to upper half of face ---
+        let upperHalfRect = new cv.Rect(f.x, f.y, f.width, Math.floor(f.height / 2));
+        let faceROI = gray.roi(upperHalfRect);
+
+        let eyes = new cv.RectVector();
+        eyeCascade.detectMultiScale(faceROI, eyes, 1.1, 5, 0, new cv.Size(20, 20));
+
+        // Convert detected eyes to JS array for easier filtering
+        let eyeRects = [];
+        for (let j = 0; j < eyes.size(); ++j) {
+          let e = eyes.get(j);
+          eyeRects.push({
+            x: e.x,
+            y: e.y,
+            w: e.width,
+            h: e.height
+          });
+        }
+
+        // Sort eyes left-to-right
+        eyeRects.sort((a, b) => a.x - b.x);
+
+        // Filter: remove outliers that are too far vertically apart
+        if (eyeRects.length > 2) {
+          // Keep only two eyes that are roughly on same row
+          let avgY = eyeRects.reduce((s, e) => s + e.y, 0) / eyeRects.length;
+          eyeRects = eyeRects
+            .filter(e => Math.abs(e.y - avgY) < f.height / 6) // same height band
+            .slice(0, 2); // at most 2
+        } else {
+          eyeRects = eyeRects.slice(0, 2);
+          }
+
+        // Draw up to 2 eyes
+        for (let e of eyeRects) {
+          cv.rectangle(src,
+            new cv.Point(upperHalfRect.x + e.x, upperHalfRect.y + e.y),
+            new cv.Point(upperHalfRect.x + e.x + e.w, upperHalfRect.y + e.y + e.h), [0, 255, 0, 255], 2);
+        }
+
+        faceROI.delete(); eyes.delete();
+      }
+
+      cv.imshow(canvas, src);
+      src.delete(); gray.delete(); faces.delete();
+    }
   </script>
 </body>
 </html>
+
 
 
 
