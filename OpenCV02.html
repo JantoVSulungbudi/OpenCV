@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Waja, Mata & Iris</title>
+  <title>Wajah, Mata & Iris</title>
   <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
   <style>
     body { text-align: center; font-family: sans-serif; }
@@ -12,9 +12,9 @@
 </head>
 <body>
   <h2>Deteksi Wajah, Mata dan Iris</h2>
-  <button id="startBtn">Start Camera</button>
-  <button id="switchBtn">Switch Camera</button>
-  <button id="captureBtn">Capture</button>
+  <button id="startBtn" disabled>Start Camera</button>
+  <button id="switchBtn" disabled>Switch Camera</button>
+  <button id="captureBtn" disabled>Capture</button>
   <br>
   <video id="video" width="480" height="360" autoplay playsinline></video>
   <br>
@@ -28,113 +28,112 @@
     let currentFacingMode = "environment";
     let faceCascade, eyeCascade;
 
-    // Load cascades
-    async function loadCascades() {
+    // all logic will run after OpenCV is ready
+    cv['onRuntimeInitialized'] = async () => {
+      console.log("✅ OpenCV.js is ready!");
+
+      // enable buttons now
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('switchBtn').disabled = false;
+      document.getElementById('captureBtn').disabled = false;
+
+      // load cascades
       faceCascade = new cv.CascadeClassifier();
       eyeCascade = new cv.CascadeClassifier();
       await faceCascade.load('haarcascade_frontalface_default.xml');
       await eyeCascade.load('haarcascade_eye.xml');
-      console.log("Cascades loaded!");
-    }
+      console.log("✅ Cascades loaded!");
 
-    // Start or switch camera
-    async function startCamera(facingMode = "environment") {
-      try {
-        if (stream) stream.getTracks().forEach(t => t.stop());
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facingMode },
-          audio: false
-        });
-        video.srcObject = stream;
-        currentFacingMode = facingMode;
-      } catch (e) {
-        alert("Camera error: " + e.message);
+      // camera control
+      async function startCamera(facingMode = "environment") {
+        try {
+          if (stream) stream.getTracks().forEach(t => t.stop());
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facingMode },
+            audio: false
+          });
+          video.srcObject = stream;
+          currentFacingMode = facingMode;
+        } catch (e) {
+          alert("Camera error: " + e.message);
+        }
       }
-    }
 
-    document.getElementById('startBtn').onclick = () => startCamera();
-    document.getElementById('switchBtn').onclick = () => {
-      let newMode = currentFacingMode === "user" ? "environment" : "user";
-      startCamera(newMode);
-    };
-    document.getElementById('captureBtn').onclick = () => detectOnce();
+      document.getElementById('startBtn').onclick = () => startCamera();
+      document.getElementById('switchBtn').onclick = () => {
+        let newMode = currentFacingMode === "user" ? "environment" : "user";
+        startCamera(newMode);
+      };
 
-    // Capture + detect once
-    function detectOnce() {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      let src = cv.imread(canvas);
-      let gray = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-      cv.equalizeHist(gray, gray);
+      // capture and detect
+      document.getElementById('captureBtn').onclick = () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        let src = cv.imread(canvas);
+        let gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        cv.equalizeHist(gray, gray);
 
-      let faces = new cv.RectVector();
-      faceCascade.detectMultiScale(gray, faces, 1.1, 3, 0, new cv.Size(80, 80));
+        let faces = new cv.RectVector();
+        faceCascade.detectMultiScale(gray, faces, 1.1, 3, 0, new cv.Size(80, 80));
 
-      for (let i = 0; i < faces.size(); i++) {
-        let face = faces.get(i);
-        cv.rectangle(src, new cv.Point(face.x, face.y),
-                          new cv.Point(face.x + face.width, face.y + face.height),
-                          [255, 0, 0, 255], 2);
+        for (let i = 0; i < faces.size(); i++) {
+          let face = faces.get(i);
+          cv.rectangle(src, new cv.Point(face.x, face.y),
+                            new cv.Point(face.x + face.width, face.y + face.height),
+                            [255, 0, 0, 255], 2);
 
-        let faceROI = gray.roi(face);
-        let upperROI = faceROI.roi(new cv.Rect(0, 0, face.width, face.height / 2));
-        let eyes = new cv.RectVector();
-        eyeCascade.detectMultiScale(upperROI, eyes, 1.1, 3, 0, new cv.Size(20, 20));
+          let faceROI = gray.roi(face);
+          let upperROI = faceROI.roi(new cv.Rect(0, 0, face.width, face.height / 2));
+          let eyes = new cv.RectVector();
+          eyeCascade.detectMultiScale(upperROI, eyes, 1.1, 3, 0, new cv.Size(20, 20));
 
-        let eyeRects = [];
-        for (let j = 0; j < eyes.size(); j++) eyeRects.push(eyes.get(j));
-        eyeRects.sort((a, b) => a.x - b.x);
-        eyeRects = eyeRects.slice(0, 2);
+          let eyeRects = [];
+          for (let j = 0; j < eyes.size(); j++) eyeRects.push(eyes.get(j));
+          eyeRects.sort((a, b) => a.x - b.x);
+          eyeRects = eyeRects.slice(0, 2);
 
-        for (let eye of eyeRects) {
-          let ex = face.x + eye.x;
-          let ey = face.y + eye.y;
-          cv.rectangle(src, new cv.Point(ex, ey),
-                            new cv.Point(ex + eye.width, ey + eye.height),
-                            [0, 0, 255, 255], 2);
+          for (let eye of eyeRects) {
+            let ex = face.x + eye.x;
+            let ey = face.y + eye.y;
+            cv.rectangle(src, new cv.Point(ex, ey),
+                              new cv.Point(ex + eye.width, ey + eye.height),
+                              [0, 0, 255, 255], 2);
 
-          // Iris detection (adaptive threshold + contour moments)
-          let eyeROI = upperROI.roi(eye);
-          let thresh = new cv.Mat();
-          cv.GaussianBlur(eyeROI, eyeROI, new cv.Size(5, 5), 0);
-          cv.adaptiveThreshold(eyeROI, thresh, 255,
-              cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 11, 5);
+            // Iris detection (adaptive threshold + contour)
+            let eyeROI = upperROI.roi(eye);
+            let thresh = new cv.Mat();
+            cv.GaussianBlur(eyeROI, eyeROI, new cv.Size(5, 5), 0);
+            cv.adaptiveThreshold(eyeROI, thresh, 255,
+                cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 11, 5);
 
-          let contours = new cv.MatVector();
-          let hierarchy = new cv.Mat();
-          cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            let contours = new cv.MatVector();
+            let hierarchy = new cv.Mat();
+            cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-          let maxArea = 0, bestContour = null;
-          for (let k = 0; k < contours.size(); k++) {
-            let area = cv.contourArea(contours.get(k));
-            if (area > maxArea) {
-              maxArea = area;
-              bestContour = contours.get(k);
+            let maxArea = 0, bestContour = null;
+            for (let k = 0; k < contours.size(); k++) {
+              let area = cv.contourArea(contours.get(k));
+              if (area > maxArea) { maxArea = area; bestContour = contours.get(k); }
             }
+
+            if (bestContour && maxArea > 10) {
+              let M = cv.moments(bestContour);
+              if (M.m00 !== 0) {
+                let cx = M.m10 / M.m00;
+                let cy = M.m01 / M.m00;
+                cv.circle(src, new cv.Point(ex + cx, ey + cy), 3, [0, 255, 0, 255], -1);
+              }
+            }
+
+            thresh.delete(); contours.delete(); hierarchy.delete(); eyeROI.delete();
           }
 
-          if (bestContour && maxArea > 10) {
-            let M = cv.moments(bestContour);
-            if (M.m00 !== 0) {
-              let cx = M.m10 / M.m00;
-              let cy = M.m01 / M.m00;
-              cv.circle(src, new cv.Point(ex + cx, ey + cy), 3, [0, 255, 0, 255], -1);
-            }
-          }
-
-          thresh.delete(); contours.delete(); hierarchy.delete(); eyeROI.delete();
+          upperROI.delete(); faceROI.delete(); eyes.delete();
         }
 
-        upperROI.delete(); faceROI.delete(); eyes.delete();
-      }
-
-      cv.imshow(canvas, src);
-      src.delete(); gray.delete(); faces.delete();
-    }
-
-    cv['onRuntimeInitialized'] = async () => {
-      await loadCascades();
-      console.log("OpenCV ready!");
+        cv.imshow(canvas, src);
+        src.delete(); gray.delete(); faces.delete();
+      };
     };
   </script>
 </body>
