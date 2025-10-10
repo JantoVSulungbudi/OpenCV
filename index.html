@@ -3,75 +3,75 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenCV.js Face & Eye Detection</title>
+  <title>Face & Eye Detection - OpenCV.js</title>
   <style>
-    body {
-      display: flex; flex-direction: column; align-items: center;
-      font-family: sans-serif; background: #f0f0f0;
-    }
-    video, canvas { width: 90%; max-width: 480px; border-radius: 10px; margin: 8px; }
-    button {
-      padding: 10px 20px; font-size: 16px; border: none;
-      border-radius: 6px; background: #2196f3; color: white;
-      cursor: pointer;
-    }
+    body { text-align:center; font-family: sans-serif; background:#f4f4f4; }
+    video, canvas { width:90%; max-width:480px; margin:10px; border-radius:10px; }
+    button { margin:5px; padding:10px 20px; font-size:16px; }
   </style>
 </head>
 <body>
   <h2>Face and Eye Detection (OpenCV.js)</h2>
+  <button id="startBtn">Start Camera</button>
+  <button id="captureBtn">Capture</button>
   <video id="video" autoplay playsinline></video>
-  <button id="capture">Capture</button>
   <canvas id="canvasOutput"></canvas>
 
-  <!-- Load OpenCV.js -->
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
 
-  <script type="text/javascript">
+  <script>
     let video = document.getElementById('video');
     let canvas = document.getElementById('canvasOutput');
     let ctx = canvas.getContext('2d');
-    let faceCascade, eyeCascade, src, gray;
+    let faceCascade, eyeCascade;
 
-    // Initialize OpenCV when loaded
     function onOpenCvReady() {
-      console.log("OpenCV.js is ready");
+      console.log("OpenCV.js loaded");
+      document.getElementById('startBtn').disabled = false;
+    }
 
-      // Load Haar cascade files
-      let faceCascadeFile = 'haarcascade_frontalface_default.xml';
-      let eyeCascadeFile = 'haarcascade_eye.xml';
+    async function startCamera(facingMode = "environment") {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facingMode },
+          audio: false
+        });
+        video.srcObject = stream;
+        console.log("Camera started:", facingMode);
+      } catch (err) {
+        console.warn("Camera error:", err);
+        if (facingMode === "environment") startCamera("user"); // fallback
+        else alert("Cannot access camera: " + err.message);
+      }
+    }
+
+    document.getElementById('startBtn').onclick = async () => {
+      await loadCascades();
+      startCamera();
+    };
+
+    async function loadCascades() {
       faceCascade = new cv.CascadeClassifier();
       eyeCascade = new cv.CascadeClassifier();
 
-      // Load cascades asynchronously
-      cv.FS_createDataFile('/', faceCascadeFile, new Uint8Array(), true, false);
-      cv.FS_createDataFile('/', eyeCascadeFile, new Uint8Array(), true, false);
+      async function loadCascade(name) {
+        const url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/" + name;
+        const response = await fetch(url);
+        const data = new Uint8Array(await response.arrayBuffer());
+        cv.FS_createDataFile('/', name, data, true, false);
+        const classifier = new cv.CascadeClassifier();
+        classifier.load(name);
+        return classifier;
+      }
 
-      cv['onRuntimeInitialized'] = async () => {
-        await loadCascade(faceCascade, faceCascadeFile);
-        await loadCascade(eyeCascade, eyeCascadeFile);
-        startCamera();
-      };
+      faceCascade = await loadCascade("haarcascade_frontalface_default.xml");
+      eyeCascade = await loadCascade("haarcascade_eye.xml");
+      console.log("Cascades loaded");
     }
 
-    async function loadCascade(cascade, file) {
-      const response = await fetch('https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/' + file);
-      const data = new Uint8Array(await response.arrayBuffer());
-      cv.FS_createDataFile('/', file, data, true, false);
-      cascade.load(file);
-      console.log(file + " loaded");
-    }
+    document.getElementById('captureBtn').onclick = function() {
+      if (video.videoWidth === 0) return alert("Camera not started yet!");
 
-    function startCamera() {
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
-        .then(function(stream) {
-          video.srcObject = stream;
-        })
-        .catch(function(err) {
-          console.error("Camera error: " + err);
-        });
-    }
-
-    document.getElementById('capture').onclick = function() {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0);
@@ -79,29 +79,22 @@
     };
 
     function detectFacesAndEyes() {
-      src = cv.imread(canvas);
-      gray = new cv.Mat();
+      let src = cv.imread(canvas);
+      let gray = new cv.Mat();
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
       let faces = new cv.RectVector();
       let eyes = new cv.RectVector();
-      let msize = new cv.Size(0, 0);
+      faceCascade.detectMultiScale(gray, faces, 1.1, 3, 0);
 
-      faceCascade.detectMultiScale(gray, faces, 1.1, 3, 0, msize, msize);
       for (let i = 0; i < faces.size(); ++i) {
-        let face = faces.get(i);
-        let point1 = new cv.Point(face.x, face.y);
-        let point2 = new cv.Point(face.x + face.width, face.y + face.height);
-        cv.rectangle(src, point1, point2, [255, 0, 0, 255], 2);
-
-        // ROI for eyes
-        let faceROI = gray.roi(face);
+        let f = faces.get(i);
+        cv.rectangle(src, new cv.Point(f.x, f.y), new cv.Point(f.x+f.width, f.y+f.height), [255,0,0,255], 2);
+        let faceROI = gray.roi(f);
         eyeCascade.detectMultiScale(faceROI, eyes);
         for (let j = 0; j < eyes.size(); ++j) {
-          let eye = eyes.get(j);
-          let eyePoint1 = new cv.Point(face.x + eye.x, face.y + eye.y);
-          let eyePoint2 = new cv.Point(face.x + eye.x + eye.width, face.y + eye.y + eye.height);
-          cv.rectangle(src, eyePoint1, eyePoint2, [0, 255, 0, 255], 2);
+          let e = eyes.get(j);
+          cv.rectangle(src, new cv.Point(f.x+e.x, f.y+e.y), new cv.Point(f.x+e.x+e.width, f.y+e.y+e.height), [0,255,0,255], 2);
         }
         faceROI.delete();
       }
