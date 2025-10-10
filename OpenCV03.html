@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time</title>
+  <style>
+    body {
+      text-align: center;
+      font-family: sans-serif;
+      background: #f4f4f4;
+    }
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    #canvasOutput {
+      width: 90%;
+      max-width: 480px;
+      border-radius: 10px;
+      margin-top: 10px;
+    }
+    /* 👇 keep video active but invisible */
+    #video {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+      width: 1px;
+      height: 1px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Real-Time Deteksi Juling</h2>
+  <button id="startBtn">Start Camera</button>
+  <button id="switchBtn">Switch Camera</button>
+  <br>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvasOutput"></canvas>
+
+  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
+
+  <script>
+    let video = document.getElementById("video");
+    let canvas = document.getElementById("canvasOutput");
+    let ctx = canvas.getContext("2d");
+
+    let faceCascade, eyeCascade;
+    let stream = null;
+    let currentFacingMode = "environment"; // start with back camera
+    let processing = false;
+
+    function onOpenCvReady() {
+      console.log("✅ OpenCV.js loaded");
+      document.getElementById("startBtn").disabled = false;
+    }
+
+    async function loadCascades() {
+      async function loadCascade(name) {
+        const url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/" + name;
+        const response = await fetch(url);
+        const data = new Uint8Array(await response.arrayBuffer());
+        cv.FS_createDataFile("/", name, data, true, false);
+        const classifier = new cv.CascadeClassifier();
+        classifier.load(name);
+        return classifier;
+      }
+
+      faceCascade = await loadCascade("haarcascade_frontalface_default.xml");
+      eyeCascade = await loadCascade("haarcascade_eye.xml");
+      console.log("✅ Cascades loaded");
+    }
+
+    async function startCamera(facingMode = "environment") {
+      try {
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+          audio: false
+        });
+        video.srcObject = stream;
+        currentFacingMode = facingMode;
+        console.log("🎥 Camera started:", facingMode);
+      } catch (err) {
+        console.error("Camera error:", err);
+        alert("Cannot access camera: " + err.message);
+      }
+    }
+
+    document.getElementById("startBtn").onclick = async () => {
+      await loadCascades();
+      await startCamera();
+      startProcessing();
+    };
+
+    document.getElementById("switchBtn").onclick = async () => {
+      const newMode = currentFacingMode === "environment" ? "user" : "environment";
+      await startCamera(newMode);
+    };
+
+    function startProcessing() {
+      if (processing) return;
+      processing = true;
+      const FPS = 15;
+      function processVideo() {
+        if (!processing) return;
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          detectAndDraw();
+        }
+        setTimeout(processVideo, 1000 / FPS);
+      }
+      processVideo();
+    }
+
+    function detectAndDraw() {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      let src = cv.imread(canvas);
+      let gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+
+      let faces = new cv.RectVector();
+      faceCascade.detectMultiScale(gray, faces, 1.1, 3, 0);
+
+      for (let i = 0; i < faces.size(); ++i) {
+        let f = faces.get(i);
+        cv.rectangle(src, new cv.Point(f.x, f.y),
+                          new cv.Point(f.x + f.width, f.y + f.height),
+                          [255, 0, 0, 255], 2);
+
+        // Upper half of face for eye detection
+        let upperRect = new cv.Rect(f.x, f.y, f.width, Math.floor(f.height / 2));
+        let faceROI = gray.roi(upperRect);
+        let eyes = new cv.RectVector();
+        eyeCascade.detectMultiScale(faceROI, eyes, 1.1, 5, 0, new cv.Size(20, 20));
+
+        // Convert to array for filtering
+        let eyeRects = [];
+        for (let j = 0; j < eyes.size(); ++j) {
+          let e = eyes.get(j);
+          eyeRects.push({ x: e.x, y: e.y, w: e.width, h: e.height });
+        }
+        eyeRects.sort((a, b) => a.x - b.x);
+        if (eyeRects.length > 2) {
+          let avgY = eyeRects.reduce((s, e) => s + e.y, 0) / eyeRects.length;
+          eyeRects = eyeRects.filter(e => Math.abs(e.y - avgY) < f.height / 6).slice(0, 2);
+        } else {
+          eyeRects = eyeRects.slice(0, 2);
+        }
+
+        // Draw eyes + find iris
+        for (let e of eyeRects) {
+          let eyeRect = new cv.Rect(e.x, e.y, e.w, e.h);
+          let eyeROI = faceROI.roi(eyeRect);
+
+          // Draw green rectangle around eye
+          cv.rectangle(src,
+            new cv.Point(upperRect.x + e.x, upperRect.y + e.y),
+            new cv.Point(upperRect.x + e.x + e.w, upperRect.y + e.y + e.h),
+            [0, 255, 0, 255], 2);
+
+          // Detect circles (iris) in eye
+          let circles = new cv.Mat();
+          cv.HoughCircles(eyeROI, circles, cv.HOUGH_GRADIENT, 1, e.w / 4, 100, 15, e.w / 8, e.w / 3);
+
+          for (let k = 0; k < circles.cols; ++k) {
+            let x = circles.data32F[k * 3];
+            let y = circles.data32F[k * 3 + 1];
+
+            let cx = Math.round(upperRect.x + e.x + x);
+            let cy = Math.round(upperRect.y + e.y + y);
+
+            // Draw bold visible iris marker (white ring + red center)
+            //cv.circle(src, new cv.Point(cx, cy), 10, new cv.Scalar(255, 255, 255, 255), 3, cv.LINE_AA);
+            cv.circle(src, new cv.Point(cx, cy), 3, new cv.Scalar(255, 0, 0, 255), -1, cv.LINE_AA);
+          }
+
+          circles.delete();
+          eyeROI.delete();
+        }
+
+        faceROI.delete();
+        eyes.delete();
+      }
+
+      cv.imshow(canvas, src);
+      src.delete(); gray.delete(); faces.delete();
+    }
+  </script>
+</body>
+</html>
