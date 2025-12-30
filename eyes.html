@@ -35,10 +35,10 @@
   <canvas id="leftEye"></canvas>
   <canvas id="rightEye"></canvas>
 </div>
-
+/*
 <h3>Original Image</h3>
 <canvas id="original"></canvas>
-
+*/
 <script>
 const imageInput = document.getElementById("imageInput");
 const originalCanvas = document.getElementById("original");
@@ -97,7 +97,7 @@ function cropEye(landmarks, eyeIndices, srcCanvas, dstCanvas, dstCtx) {
 
   const padding = 10;
   const cropW = maxX - minX + padding * 2;
-  const cropH = maxY - minY + padding * 2;
+  const cropH = maxY - minY + padding * 20;
 
   dstCanvas.width = cropW;
   dstCanvas.height = cropH;
