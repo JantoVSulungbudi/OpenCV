@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Eye Crop + Pupil Detection</title>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+<!-- OpenCV.js -->
+<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+
+<style>
+  body { font-family: Arial; padding: 20px; }
+  .row { display: flex; gap: 20px; }
+  canvas { border: 1px solid #aaa; }
+  .eye-box { text-align: center; }
+</style>
+</head>
+
+<body>
+
+<h2>Eye Crop + Pupil Center Detection</h2>
+
+<input type="file" id="imageInput" accept="image/*">
+
+<h3>Cropped Eyes</h3>
+<div class="row">
+  <div class="eye-box">
+    <canvas id="leftEye"></canvas>
+    <div>Normalized X: <span id="leftX">-</span></div>
+  </div>
+  <div class="eye-box">
+    <canvas id="rightEye"></canvas>
+    <div>Normalized X: <span id="rightX">-</span></div>
+  </div>
+</div>
+
+<h3>Original Image</h3>
+<canvas id="original"></canvas>
+
+<script>
+let cvReady = false;
+cv['onRuntimeInitialized'] = () => {
+  cvReady = true;
+  console.log("OpenCV ready");
+};
+
+const imageInput = document.getElementById("imageInput");
+const originalCanvas = document.getElementById("original");
+const leftEyeCanvas = document.getElementById("leftEye");
+const rightEyeCanvas = document.getElementById("rightEye");
+
+const leftXLabel = document.getElementById("leftX");
+const rightXLabel = document.getElementById("rightX");
+
+const octx = originalCanvas.getContext("2d");
+const lctx = leftEyeCanvas.getContext("2d");
+const rctx = rightEyeCanvas.getContext("2d");
+
+/* FaceMesh */
+const faceMesh = new FaceMesh({
+  locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+});
+faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true });
+faceMesh.onResults(onResults);
+
+const LEFT_EYE = [33,133,160,159,158,157,173];
+const RIGHT_EYE = [362,263,387,386,385,384,398];
+
+imageInput.onchange = e => {
+  const img = new Image();
+  img.onload = async () => {
+    originalCanvas.width = img.width;
+    originalCanvas.height = img.height;
+    octx.drawImage(img, 0, 0);
+    await faceMesh.send({ image: img });
+  };
+  img.src = URL.createObjectURL(e.target.files[0]);
+};
+
+function cropEye(landmarks, idx, src, dst, ctx) {
+  const w = src.width, h = src.height;
+  const xs = idx.map(i => landmarks[i].x * w);
+  const ys = idx.map(i => landmarks[i].y * h);
+
+  const pad = 10;
+  const minX = Math.min(...xs) - pad;
+  const maxX = Math.max(...xs) + pad;
+  const minY = Math.min(...ys) - pad;
+  const maxY = Math.max(...ys) + pad;
+
+  dst.width = maxX - minX;
+  dst.height = maxY - minY;
+
+  ctx.drawImage(src, minX, minY, dst.width, dst.height, 0, 0, dst.width, dst.height);
+}
+
+function detectPupil(canvas, ctx, label) {
+  if (!cvReady) return;
+
+  let src = cv.imread(canvas);
+  let gray = new cv.Mat();
+  let circles = new cv.Mat();
+
+  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+  cv.GaussianBlur(gray, gray, new cv.Size(9,9), 1.5);
+
+  cv.HoughCircles(
+    gray,
+    circles,
+    cv.HOUGH_GRADIENT,
+    1.5,
+    gray.rows / 4,
+    100,
+    20,
+    gray.cols / 8,
+    gray.cols / 3
+  );
+
+  if (circles.cols > 0) {
+    let x = circles.data32F[0];
+    let y = circles.data32F[1];
+    let r = circles.data32F[2];
+
+    ctx.strokeStyle = "red";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    ctx.fillStyle = "red";
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, 2 * Math.PI);
+    ctx.fill();
+
+    const xNorm = (x / canvas.width).toFixed(3);
+    label.innerText = xNorm;
+  } else {
+    label.innerText = "not found";
+  }
+
+  src.delete(); gray.delete(); circles.delete();
+}
+
+function onResults(res) {
+  if (!res.multiFaceLandmarks) return;
+  const lm = res.multiFaceLandmarks[0];
+
+  cropEye(lm, LEFT_EYE, originalCanvas, leftEyeCanvas, lctx);
+  cropEye(lm, RIGHT_EYE, originalCanvas, rightEyeCanvas, rctx);
+
+  detectPupil(leftEyeCanvas, lctx, leftXLabel);
+  detectPupil(rightEyeCanvas, rctx, rightXLabel);
+}
+</script>
+
+</body>
+</html>
