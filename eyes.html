@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MediaPipe Eye Cropper</title>
+
+  <!-- MediaPipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      margin: 5px;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+  </style>
+</head>
+<body>
+
+<h2>MediaPipe FaceMesh – Eye Crop Web App</h2>
+
+<input type="file" id="imageInput" accept="image/*" />
+
+<h3>Cropped Eyes</h3>
+<div class="row">
+  <canvas id="leftEye"></canvas>
+  <canvas id="rightEye"></canvas>
+</div>
+
+<h3>Original Image</h3>
+<canvas id="original"></canvas>
+
+<script>
+const imageInput = document.getElementById("imageInput");
+const originalCanvas = document.getElementById("original");
+const leftEyeCanvas = document.getElementById("leftEye");
+const rightEyeCanvas = document.getElementById("rightEye");
+
+const originalCtx = originalCanvas.getContext("2d");
+const leftCtx = leftEyeCanvas.getContext("2d");
+const rightCtx = rightEyeCanvas.getContext("2d");
+
+/* MediaPipe FaceMesh */
+const faceMesh = new FaceMesh({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+});
+
+faceMesh.setOptions({
+  maxNumFaces: 1,
+  refineLandmarks: true,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5
+});
+
+faceMesh.onResults(onResults);
+
+/* Eye landmark indices */
+const LEFT_EYE = [33, 133, 160, 159, 158, 157, 173];
+const RIGHT_EYE = [362, 263, 387, 386, 385, 384, 398];
+
+imageInput.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const img = new Image();
+  img.onload = async () => {
+    originalCanvas.width = img.width;
+    originalCanvas.height = img.height;
+    originalCtx.drawImage(img, 0, 0);
+
+    await faceMesh.send({ image: img });
+  };
+  img.src = URL.createObjectURL(file);
+});
+
+function cropEye(landmarks, eyeIndices, srcCanvas, dstCanvas, dstCtx) {
+  const w = srcCanvas.width;
+  const h = srcCanvas.height;
+
+  const xs = eyeIndices.map(i => landmarks[i].x * w);
+  const ys = eyeIndices.map(i => landmarks[i].y * h);
+
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  const padding = 10;
+  const cropW = maxX - minX + padding * 2;
+  const cropH = maxY - minY + padding * 2;
+
+  dstCanvas.width = cropW;
+  dstCanvas.height = cropH;
+
+  dstCtx.clearRect(0, 0, cropW, cropH);
+  dstCtx.drawImage(
+    srcCanvas,
+    minX - padding,
+    minY - padding,
+    cropW,
+    cropH,
+    0,
+    0,
+    cropW,
+    cropH
+  );
+}
+
+function onResults(results) {
+  if (!results.multiFaceLandmarks) return;
+
+  const landmarks = results.multiFaceLandmarks[0];
+
+  cropEye(landmarks, LEFT_EYE, originalCanvas, leftEyeCanvas, leftCtx);
+  cropEye(landmarks, RIGHT_EYE, originalCanvas, rightEyeCanvas, rightCtx);
+}
+</script>
+
+</body>
+</html>
