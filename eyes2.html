@@ -95,8 +95,8 @@ function cropEye(landmarks, indices, src, dst, ctx) {
   const pad = 10;
   const minX = Math.min(...xs) - pad;
   const maxX = Math.max(...xs) + pad;
-  const minY = Math.min(...ys) - pad;
-  const maxY = Math.max(...ys) + 2*pad;
+  const minY = Math.min(...ys) - 2*pad;
+  const maxY = Math.max(...ys) + 4*pad;
 
   dst.width = maxX - minX;
   dst.height = maxY - minY;
